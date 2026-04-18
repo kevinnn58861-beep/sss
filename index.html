@@ -1,74 +1,187 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-    <title>Debug Sensor</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Hand Particles - Masterpiece</title>
     <style>
-        body { margin: 0; background: #000; color: #0f0; font-family: monospace; overflow: hidden; }
-        #log { position: absolute; top: 10px; left: 10px; z-index: 100; background: rgba(0,0,0,0.8); padding: 10px; }
-        #input_video { position: absolute; bottom: 10px; right: 10px; width: 150px; transform: scaleX(-1); border: 1px solid #333; }
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
+        #input_video { 
+            position: absolute; bottom: 10px; right: 10px; 
+            width: 200px; border: 2px solid #555; border-radius: 8px; 
+            transform: scaleX(-1); z-index: 10; 
+        }
+        #instructions {
+            position: absolute; top: 10px; left: 10px;
+            color: white; background: rgba(0,0,0,0.6);
+            padding: 15px; border-radius: 10px; pointer-events: none;
+            z-index: 10; line-height: 1.6;
+        }
+        .key { color: #00ffcc; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div id="log">Status: Menunggu Kamera...</div>
-    <video id="input_video" playsinline></video>
+
+    <div id="instructions">
+        <h3 style="margin-top:0">Kontrol Tangan:</h3>
+        <div><span class="key">Kepal:</span> Saturnus (Emas)</div>
+        <div><span class="key">1 Jari:</span> Menara Eiffel (Putih)</div>
+        <div><span class="key">2 Jari:</span> Planet Bumi (Realistis)</div>
+        <div><span class="key">3 Jari:</span> Pohon Natal (Hijau/Merah)</div>
+    </div>
+
+    <video id="input_video" autoplay playsinline></video>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        const logEl = document.getElementById('log');
-        function writeLog(msg) { logEl.innerText += "\n> " + msg; console.log(msg); }
-
-        // 1. Cek Koneksi & Library
-        if (typeof Hands === 'undefined') {
-            writeLog("ERROR: Library MediaPipe gagal dimuat. Cek koneksi internet!");
-        }
-
-        // 2. Inisialisasi Three.js (Sangat Sederhana)
+        // --- 1. SETUP THREE.JS ---
+        const particleCount = 100000; 
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
+        camera.position.z = 20;
 
-        const geo = new THREE.SphereGeometry(5, 32, 32);
-        const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
-        const sphere = new THREE.Mesh(geo, mat);
-        scene.add(sphere);
-        camera.position.z = 15;
+        // --- 2. DATA BUFFER ---
+        const geometry = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
 
-        // 3. Sensor Tangan
+        const shapes = {
+            saturn: new Float32Array(particleCount * 3),
+            eiffel: new Float32Array(particleCount * 3),
+            earth: new Float32Array(particleCount * 3),
+            earthCol: new Float32Array(particleCount * 3),
+            xmas: new Float32Array(particleCount * 3),
+            xmasCol: new Float32Array(particleCount * 3)
+        };
+
+        // --- 3. GENERATE SHAPES ---
+        for (let i = 0; i < particleCount; i++) {
+            const idx = i * 3;
+
+            // SATURNUS
+            if (i < particleCount * 0.4) {
+                const phi = Math.acos(-1 + (2 * i) / (particleCount * 0.4));
+                const theta = Math.sqrt(particleCount * 0.4 * Math.PI) * phi;
+                shapes.saturn[idx] = 3 * Math.cos(theta) * Math.sin(phi);
+                shapes.saturn[idx+1] = 3 * Math.sin(theta) * Math.sin(phi);
+                shapes.saturn[idx+2] = 3 * Math.cos(phi);
+            } else {
+                const a = Math.random() * Math.PI * 2;
+                const r = 4.5 + Math.random() * 3.5;
+                shapes.saturn[idx] = Math.cos(a) * r;
+                shapes.saturn[idx+1] = (Math.random() - 0.5) * 0.3;
+                shapes.saturn[idx+2] = Math.sin(a) * r;
+            }
+
+            // EIFFEL
+            const yE = (Math.random() * 18) - 8;
+            const normYE = (yE + 8) / 18;
+            const scaleE = 4 * Math.exp(-2.5 * normYE);
+            const pillar = Math.floor(Math.random() * 4);
+            shapes.eiffel[idx] = (pillar < 2 ? 1 : -1) * scaleE + (Math.random()-0.5)*0.2;
+            shapes.eiffel[idx+1] = yE;
+            shapes.eiffel[idx+2] = (pillar % 2 === 0 ? 1 : -1) * scaleE + (Math.random()-0.5)*0.2;
+
+            // EARTH
+            const phiB = Math.acos(-1 + (2 * i) / particleCount);
+            const thetaB = Math.sqrt(particleCount * Math.PI) * phiB;
+            const rB = 6;
+            const ex = rB * Math.cos(thetaB) * Math.sin(phiB);
+            const ey = rB * Math.sin(thetaB) * Math.sin(phiB);
+            const ez = rB * Math.cos(phiB);
+            shapes.earth[idx] = ex; shapes.earth[idx+1] = ey; shapes.earth[idx+2] = ez;
+            const land = Math.sin(ex * 0.5) * Math.cos(ey * 0.5) * Math.sin(ez * 0.5) + Math.sin(ex * 1.2) * Math.cos(ey * 1.2);
+            const cB = new THREE.Color();
+            if (Math.abs(ey) > 5.3) cB.setHex(0xffffff);
+            else if (land > 0.15) cB.setHex(0x2d5a27);
+            else cB.setHex(0x0a2a4a);
+            shapes.earthCol[idx] = cB.r; shapes.earthCol[idx+1] = cB.g; shapes.earthCol[idx+2] = cB.b;
+
+            // XMAS
+            const yX = (Math.random() * 12) - 6;
+            const normYX = (yX + 6) / 12;
+            let rX, cX = new THREE.Color();
+            if (normYX < 0.1) { rX = 0.6; cX.setHex(0x4b2d0b); }
+            else { rX = (1.1 - normYX) * 4.5; cX.setHex(Math.random() > 0.98 ? 0xff0000 : 0x006400); }
+            shapes.xmas[idx] = (Math.random()-0.5)*rX; shapes.xmas[idx+1] = yX; shapes.xmas[idx+2] = (Math.random()-0.5)*rX;
+            shapes.xmasCol[idx] = cX.r; shapes.xmasCol[idx+1] = cX.g; shapes.xmasCol[idx+2] = cX.b;
+
+            // INIT
+            positions[idx] = shapes.saturn[idx]; positions[idx+1] = shapes.saturn[idx+1]; positions[idx+2] = shapes.saturn[idx+2];
+            colors[idx] = 1; colors[idx+1] = 0.8; colors[idx+2] = 0.2;
+        }
+
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const material = new THREE.PointsMaterial({ size: 0.02, vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
+        const points = new THREE.Points(geometry, material);
+        scene.add(points);
+
+        // --- 4. HAND TRACKING ---
+        let currentTarget = shapes.saturn;
+        let currentCol = null;
+        let baseCol = new THREE.Color(0xffd700);
+
+        const videoElement = document.getElementById('input_video');
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5 });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6 });
 
-        hands.onResults((results) => {
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const pt = results.multiHandLandmarks[0][9];
-                sphere.position.x = (pt.x - 0.5) * -20;
-                sphere.position.y = (pt.y - 0.5) * -15;
-                logEl.innerText = "Status: SENSOR AKTIF! Gerakkan Tangan.";
+        hands.onResults((res) => {
+            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+                const pts = res.multiHandLandmarks[0];
+                points.position.x = THREE.MathUtils.lerp(points.position.x, (pts[9].x - 0.5) * -35, 0.1);
+                points.position.y = THREE.MathUtils.lerp(points.position.y, (pts[9].y - 0.5) * -25, 0.1);
+
+                const index = pts[8].y < pts[6].y - 0.05;
+                const middle = pts[12].y < pts[10].y - 0.05;
+                const ring = pts[16].y < pts[14].y - 0.05;
+
+                if (index && middle && ring) { currentTarget = shapes.xmas; currentCol = shapes.xmasCol; }
+                else if (index && middle) { currentTarget = shapes.earth; currentCol = shapes.earthCol; }
+                else if (index) { currentTarget = shapes.eiffel; currentCol = null; baseCol.setHex(0xeeeeee); }
+                else { currentTarget = shapes.saturn; currentCol = null; baseCol.setHex(0xffd700); }
             }
         });
 
-        // 4. Aktivasi Kamera dengan Catch Error
-        const videoElement = document.getElementById('input_video');
-        const cameraUtils = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            width: 640, height: 480
-        });
+        new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 640, height: 480 }).start();
 
-        writeLog("Mencoba akses kamera...");
-        cameraUtils.start()
-            .then(() => writeLog("Kamera berhasil terbuka."))
-            .catch(err => writeLog("KAGAL AKSES KAMERA: " + err));
-
+        // --- 5. ANIMATE ---
         function animate() {
             requestAnimationFrame(animate);
-            sphere.rotation.y += 0.01;
+            const pos = geometry.attributes.position;
+            const col = geometry.attributes.color;
+            for (let i = 0; i < particleCount; i++) {
+                const idx = i * 3;
+                pos.array[idx] += (currentTarget[idx] - pos.array[idx]) * 0.08;
+                pos.array[idx+1] += (currentTarget[idx+1] - pos.array[idx+1]) * 0.08;
+                pos.array[idx+2] += (currentTarget[idx+2] - pos.array[idx+2]) * 0.08;
+                if (currentCol) {
+                    col.array[idx] += (currentCol[idx] - col.array[idx]) * 0.1;
+                    col.array[idx+1] += (currentCol[idx+1] - col.array[idx+1]) * 0.1;
+                    col.array[idx+2] += (currentCol[idx+2] - col.array[idx+2]) * 0.1;
+                } else {
+                    col.array[idx] += (baseCol.r - col.array[idx]) * 0.1;
+                    col.array[idx+1] += (baseCol.g - col.array[idx+1]) * 0.1;
+                    col.array[idx+2] += (baseCol.b - col.array[idx+2]) * 0.1;
+                }
+            }
+            pos.needsUpdate = true; col.needsUpdate = true;
+            points.rotation.y += 0.003;
             renderer.render(scene, camera);
         }
         animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
     </script>
 </body>
 </html>
