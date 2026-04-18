@@ -2,334 +2,158 @@
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <title>Saturnus v4: GOD MODE - GPGPU Shaders</title>
+    <title>Saturnus God Mode V5</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: 'Segoe UI', sans-serif; }
-        #ui { position: absolute; top: 30px; left: 30px; pointer-events: none; z-index: 10; border-left: 2px solid #00ffff; padding-left: 15px; text-shadow: 0 0 5px rgba(0,255,255,0.5); }
-        h1 { margin: 0; font-weight: 200; letter-spacing: 4px; font-size: 18px; color: #00ffff; }
-        #status { font-size: 12px; opacity: 0.8; margin-top: 5px; color: #aaa; }
-        
-        #video-container { position: absolute; bottom: 20px; right: 20px; width: 180px; height: 135px; transform: scaleX(-1); border-radius: 12px; overflow: hidden; border: 1px solid rgba(0,255,255,0.2); box-shadow: 0 5px 15px rgba(0,0,0,0.5); opacity: 0.6; transition: opacity 0.3s; }
-        #video-container:hover { opacity: 1; }
-        #input_video { display: none; }
-        #output_canvas { width: 100%; height: 100%; object-fit: cover; }
+        body { margin: 0; overflow: hidden; background: #000; color: #0ff; font-family: 'Courier New', Courier, monospace; }
+        #ui { position: absolute; top: 20px; left: 20px; border-left: 3px solid #0ff; padding-left: 15px; pointer-events: none; }
+        #video-container { position: absolute; bottom: 20px; right: 20px; width: 200px; transform: scaleX(-1); border: 1px solid #333; border-radius: 10px; overflow: hidden; }
+        .instruksi { font-size: 12px; color: #888; }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h1>SATURNUS v4 [GOD MODE]</h1>
-        <p style="font-size: 10px; color: #555;">GPGPU Physics & Dual-Hand Shaders</p>
-        <p id="status">Menginisialisasi GPU...</p>
+        <h2 id="status">INITIALIZING SENSORS...</h2>
+        <div class="instruksi">
+            - Jari Telunjuk: SUPERNOVA<br>
+            - Jari Tengah: HELLO WORLD<br>
+            - Jari Manis: PLANE MODE<br>
+            - Jempol + Kelingking: ZOOM
+        </div>
     </div>
-    <video id="input_video"></video>
-    <div id="video-container"><canvas id="output_canvas"></canvas></div>
+    <video id="input_video" style="display:none"></video>
+    <div id="video-container"><canvas id="output_canvas" style="width:100%"></canvas></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/misc/GPUComputationRenderer.js"></script>
-
-    <script id="computeShaderPosition" type="x-shader/x-fragment">
-        uniform float time;
-        uniform float delta;
-        uniform vec3 handGravityPos; // Posisi Tangan Kanan (Gravitasi)
-        uniform bool isFistMode;      // Tangan Kiri Mengepal (Ledakan)
-        uniform float explosionForce;
-
-        void main() {
-            vec2 uv = gl_FragCoord.xy / resolution.xy;
-            vec4 tmpPos = texture2D( texturePosition, uv );
-            vec3 pos = tmpPos.xyz;
-            float phase = tmpPos.w; // Simpan fase asli/tipe partikel
-
-            // Data Awal Partikel (Original Sphere/Ring)
-            vec3 originalPos = texture2D( texturePosition, uv ).xyz; 
-
-            // --- LOGIKA FISIKA ---
-            
-            // 1. Gravitasi Tangan Kanan (Ditarik ke Tangan)
-            vec3 dirToHand = handGravityPos - pos;
-            float distToHand = length(dirToHand);
-            if(distToHand > 0.1) {
-                pos += normalize(dirToHand) * (0.02 / (distToHand + 0.5)); // Tarikan halus
-            }
-
-            // 2. Ledakan Tangan Kiri (Mengepal)
-            if(isFistMode) {
-                vec3 dirFromCenter = normalize(pos);
-                pos += dirFromCenter * explosionForce * delta * 15.0; // Ledakan cepat
-            } else {
-                // 3. Gravitasi Alami (Ditarik kembali ke bentuk asli)
-                vec3 dirToOriginal = originalPos - pos;
-                float distToOriginal = length(dirToOriginal);
-                if(distToOriginal > 0.01) {
-                    pos += dirToOriginal * 0.03; // Tarikan kembali
-                }
-            }
-
-            // Sedikit rotasi alami
-            float angle = 0.002 * delta * phase; 
-            mat3 rotY = mat3(
-                cos(angle), 0.0, sin(angle),
-                0.0, 1.0, 0.0,
-                -sin(angle), 0.0, cos(angle)
-            );
-            pos = rotY * pos;
-
-            gl_FragColor = vec4( pos, phase );
-        }
-    </script>
-
-    <script id="particleVertexShader" type="x-shader/x-vertex">
-        uniform sampler2D texturePosition;
-        uniform float time;
-        varying vec4 vColor;
-        varying float vType; // Sphere (0) atau Ring (1)
-
-        void main() {
-            vec4 tmpPos = texture2D( texturePosition, uv );
-            vec3 pos = tmpPos.xyz;
-            vType = tmpPos.w; // Ambil tipe dari W
-
-            // Warna berdasarkan posisi dan tipe
-            vec3 colorSphere = vec3(1.0, 0.8, 0.0); // Gold
-            vec3 colorRing = vec3(0.0, 1.0, 1.0);   // Cyan
-            
-            vec3 finalColor = mix(colorSphere, colorRing, vType);
-            vColor = vec4(finalColor, 0.9);
-
-            // Ukuran berdasarkan jarak kamera dan waktu (pulsing)
-            vec4 mvPosition = modelViewMatrix * vec4( pos, 1.0 );
-            gl_PointSize = (10.0 / -mvPosition.z) * (1.0 + 0.2 * sin(time * 3.0 + pos.x));
-            gl_Position = projectionMatrix * mvPosition;
-        }
-    </script>
-
-    <script id="particleFragmentShader" type="x-shader/x-fragment">
-        varying vec4 vColor;
-        
-        void main() {
-            // Membuat bentuk lingkaran kustom (glow)
-            float dist = length(gl_PointCoord - vec2(0.5));
-            if (dist > 0.5) discard; // Potong di luar lingkaran
-
-            // Gradien glow lembut
-            float alpha = 1.0 - smoothstep(0.0, 0.5, dist);
-            gl_FragColor = vec4(vColor.rgb, vColor.a * alpha);
-        }
-    </script>
 
     <script>
-        // --- CONFIG ---
-        const WIDTH = 256; // Tekstur GPGPU (WIDTH * WIDTH = Jumlah Partikel, ~65k)
-        const PARTICLES = WIDTH * WIDTH;
-        const PARAMS = {
-            planetRadius: 4,
-            ringInnerRadius: 5.5,
-            ringOuterRadius: 10,
-            explosionForce: 0.15
-        };
-
-        // --- THREE.JS SETUP ---
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2000);
-        camera.position.set(0, 5, 25);
-
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        const mainGroup = new THREE.Group();
-        scene.add(mainGroup);
+        const group = new THREE.Group();
+        scene.add(group);
 
-        // --- GPGPU SETUP ---
-        const gpuCompute = new THREE.GPUComputationRenderer(WIDTH, WIDTH, renderer);
-        
-        // Buat tekstur posisi awal
-        const dtPosition = gpuCompute.createTexture();
-        fillPositionTexture(dtPosition);
+        const PARTICLE_COUNT = 15000;
+        const positions = new Float32Array(PARTICLE_COUNT * 3);
+        const targetPos = new Float32Array(PARTICLE_COUNT * 3);
+        const colors = new Float32Array(PARTICLE_COUNT * 3);
+        const velocities = new Float32Array(PARTICLE_COUNT * 3);
 
-        // Tambahkan shader computation
-        const positionVariable = gpuCompute.addVariable("texturePosition", document.getElementById('computeShaderPosition').textContent, dtPosition);
-        
-        // Set Uniforms (Variabel yang dikirim dari JS ke Shader)
-        positionVariable.material.uniforms.time = { value: 0.0 };
-        positionVariable.material.uniforms.delta = { value: 0.0 };
-        positionVariable.material.uniforms.handGravityPos = { value: new THREE.Vector3(0,0,0) };
-        positionVariable.material.uniforms.isFistMode = { value: false };
-        positionVariable.material.uniforms.explosionForce = { value: PARAMS.explosionForce };
-
-        // Inisialisasi GPGPU
-        const error = gpuCompute.init();
-        if (error !== null) { console.error(error); }
-
-
-        // --- PARTICLE OBJECT SETUP (Menggunakan Shaders Kustom) ---
-        const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(PARTICLES * 3);
-        const uvs = new Float32Array(PARTICLES * 2);
-        
-        // Isi UV agar setiap partikel tahu koordinat tekstur GPGPU-nya
-        for (let i = 0; i < PARTICLES; i++) {
-            uvs[i * 2] = (i % WIDTH) / WIDTH;
-            uvs[i * 2 + 1] = Math.floor(i / WIDTH) / WIDTH;
+        // --- GENERATE INITIAL SATURNUS SHAPE ---
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+            let x, y, z;
+            if (i < 8000) { // Bola Planet
+                const u = Math.random(), v = Math.random();
+                const theta = 2 * Math.PI * u, phi = Math.acos(2 * v - 1);
+                const r = 4 * Math.pow(Math.random(), 0.5);
+                x = r * Math.sin(phi) * Math.cos(theta);
+                y = r * Math.sin(phi) * Math.sin(theta);
+                z = r * Math.cos(phi);
+            } else { // Cincin
+                const angle = Math.random() * Math.PI * 2;
+                const r = 6 + Math.random() * 4;
+                x = Math.cos(angle) * r;
+                y = (Math.random() - 0.5) * 0.2;
+                z = Math.sin(angle) * r;
+            }
+            positions[i*3] = x; positions[i*3+1] = y; positions[i*3+2] = z;
+            targetPos[i*3] = x; targetPos[i*3+1] = y; targetPos[i*3+2] = z;
+            
+            const col = new THREE.Color(i < 8000 ? 0xffcc00 : 0x00ffff);
+            colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
         }
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
 
-        const particleMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                texturePosition: { value: null }, // Akan diisi hasil GPGPU
-                time: { value: 0.0 }
-            },
-            vertexShader: document.getElementById('particleVertexShader').textContent,
-            fragmentShader: document.getElementById('particleFragmentShader').textContent,
-            blending: THREE.AdditiveBlending,
-            transparent: true,
-            depthWrite: false
-        });
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        const mat = new THREE.PointsMaterial({ size: 0.06, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending });
+        const points = new THREE.Points(geo, mat);
+        group.add(points);
 
-        const particleSystem = new THREE.Points(geometry, particleMaterial);
-        particleSystem.rotation.x = Math.PI / 6; // Kemiringan awal Saturnus
-        mainGroup.add(particleSystem);
+        camera.position.z = 20;
 
-
-        // --- LOGIKA SENSOR TANGAN DUA TANGAN (MEDIAPIPE) ---
-        let handStatus = "Mencari Tangan...";
-        let handGravityPos = new THREE.Vector3(0,0,0);
-        let isFistMode = false;
+        // --- HAND LOGIC STATES ---
+        let mode = "SATURN"; 
+        const statusEl = document.getElementById('status');
 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8 });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.8 });
 
-        hands.onResults(res => {
-    const statusEl = document.getElementById('status');
-    let rightHandDetected = false;
-    let leftHandFist = false;
+        hands.onResults(results => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
+                const lm = results.multiHandLandmarks[0];
+                
+                // ZOOM LOGIC (Thumb 4 to Pinky 20)
+                const zoomDist = Math.hypot(lm[4].x - lm[20].x, lm[4].y - lm[20].y);
+                camera.position.z = THREE.MathUtils.lerp(camera.position.z, 40 - (zoomDist * 50), 0.1);
 
-    if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-        // ... (logika deteksi tangan Anda tetap sama) ...
-
-        // --- BAGIAN PERBAIKAN ---
-        if (leftHandFist && rightHandDetected) {
-            statusEl.innerText = "Tangan Kanan: Gravitasi Aktif | Tangan Kiri: SUPERNOVA!";
-            statusEl.style.color = "#ff4444";
-        } else if (rightHandDetected) {
-            statusEl.innerText = "Tangan Kanan: Gravitasi Kustom Aktif";
-            statusEl.style.color = "#00ffff";
-        } else if (leftHandFist) {
-            statusEl.innerText = "Tangan Kiri: SUPERNOVA!";
-            statusEl.style.color = "#ff4444";
-        }
-    } else {
-        statusEl.innerText = "Tangan tidak terdeteksi";
-        statusEl.style.color = "#aaa";
-    }
-});
-
-                // Update Status UI & Variabel GPGPU
-                if (rightHandDetected) {
-                    positionVariable.material.uniforms.handGravityPos.value.copy(handGravityPos);
-                    statusEl.innerText = "Tangan Kanan: Gravitasi Kustom Aktif";
-                    statusEl.style.color = "#00ffff";
+                // MODE DETECTION
+                if (lm[8].y < lm[6].y && lm[12].y > lm[10].y) {
+                    mode = "SUPERNOVA";
+                    statusEl.innerText = "MODE: SUPERNOVA EXPLOSION";
+                } else if (lm[12].y < lm[10].y && lm[8].y > lm[6].y && lm[16].y > lm[14].y) {
+                    mode = "HELLO_WORLD";
+                    statusEl.innerText = "MODE: HELLO WORLD";
+                } else if (lm[16].y < lm[14].y && lm[12].y > lm[10].y) {
+                    mode = "PLANE";
+                    statusEl.innerText = "MODE: AEROPLANE STRUCTURE";
                 } else {
-                    // Kembalikan ke pusat jika tangan kanan hilang
-                    positionVariable.material.uniforms.handGravityPos.value.set(0,0,0);
+                    mode = "SATURN";
+                    statusEl.innerText = "MODE: SATURN DEFAULT";
                 }
-
-                if (leftHandFist) {
-                    positionVariable.material.uniforms.isFistMode.value = true;
-                    statusEl.innerText += " | Tangan Kiri: SUPERNOVA!";
-                    statusEl.style.color = "#ff4444";
-                } else {
-                    positionVariable.material.uniforms.isFistMode.value = false;
-                    if(rightHandDetected) statusEl.innerText = "Tangan Kanan: Gravitasi Kustom Aktif";
-                }
-            } else {
-                statusEl.innerText = "Tangan tidak terdeteksi";
-                statusEl.style.color = "#aaa";
-                positionVariable.material.uniforms.handGravityPos.value.set(0,0,0);
-                positionVariable.material.uniforms.isFistMode.value = false;
             }
         });
 
-        const videoElement = document.getElementById('input_video');
-        const cameraDevice = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
+        new Camera(document.getElementById('input_video'), {
+            onFrame: async () => { await hands.send({image: document.getElementById('input_video')}); },
             width: 640, height: 480
-        });
-        cameraDevice.start();
+        }).start();
 
-
-        // --- RENDER LOOP & FISIKA ---
-        const clock = new THREE.Clock();
-
+        // --- FRAME ANIMATION ---
         function animate() {
             requestAnimationFrame(animate);
-            const delta = clock.getDelta();
-            const time = clock.getElapsedTime();
+            const posAttr = geo.attributes.position.array;
 
-            // 1. Update GPGPU Uniforms
-            positionVariable.material.uniforms.time.value = time;
-            positionVariable.material.uniforms.delta.value = delta;
+            for (let i = 0; i < PARTICLE_COUNT; i++) {
+                let tx = targetPos[i*3], ty = targetPos[i*3+1], tz = targetPos[i*3+2];
 
-            // 2. Jalankan Komputasi GPU
-            gpuCompute.compute();
-
-            // 3. Ambil Hasil Komputasi (Tekstur Posisi Baru) dan Kirim ke Material Partikel
-            particleMaterial.uniforms.texturePosition.value = gpuCompute.getCurrentRenderTarget(positionVariable).texture;
-            particleMaterial.uniforms.time.value = time;
-
-            // 4. Rotasi Otomatis Saturnus
-            if(!positionVariable.material.uniforms.isFistMode.value) {
-                particleSystem.rotation.y += 0.001;
+                if (mode === "SUPERNOVA") {
+                    posAttr[i*3] += (Math.random() - 0.5) * 2;
+                    posAttr[i*3+1] += (Math.random() - 0.5) * 2;
+                    posAttr[i*3+2] += (Math.random() - 0.5) * 2;
+                } else if (mode === "HELLO_WORLD") {
+                    // Logic sederhana membentuk grid text-like
+                    tx = (i % 50) - 25; ty = Math.floor(i / 100) % 10; tz = 0;
+                    posAttr[i*3] += (tx - posAttr[i*3]) * 0.1;
+                    posAttr[i*3+1] += (ty - posAttr[i*3+1]) * 0.1;
+                    posAttr[i*3+2] += (tz - posAttr[i*3+2]) * 0.1;
+                } else if (mode === "PLANE") {
+                    // Primitive Plane Shape
+                    if (i < 5000) { // Badan Pesawat (Cylinder-ish)
+                        tx = (Math.random() - 0.5) * 15; ty = (Math.random() - 0.5); tz = (Math.random() - 0.5);
+                    } else if (i < 12000) { // Sayap
+                        tx = (Math.random() - 0.5) * 4; ty = 0; tz = (Math.random() - 0.5) * 15;
+                    }
+                    posAttr[i*3] += (tx - posAttr[i*3]) * 0.1;
+                    posAttr[i*3+1] += (ty - posAttr[i*3+1]) * 0.1;
+                    posAttr[i*3+2] += (tz - posAttr[i*3+2]) * 0.1;
+                } else {
+                    // Kembali ke Saturnus
+                    posAttr[i*3] += (tx - posAttr[i*3]) * 0.05;
+                    posAttr[i*3+1] += (ty - posAttr[i*3+1]) * 0.05;
+                    posAttr[i*3+2] += (tz - posAttr[i*3+2]) * 0.05;
+                }
             }
 
+            geo.attributes.position.needsUpdate = true;
+            group.rotation.y += 0.002;
             renderer.render(scene, camera);
         }
         animate();
-
-
-        // --- HELPER FUNCTIONS ---
-        // Mengisi Tekstur GPGPU dengan Posisi Awal Saturnus
-        function fillPositionTexture(texture) {
-            const data = texture.image.data;
-            for (let i = 0; i < PARTICLES; i++) {
-                let x, y, z, r, angle, type;
-                
-                // Setengah Partikel untuk Planet, Setengah untuk Cincin
-                if (i < PARTICLES / 2) { // SPHERE (PLANET)
-                    const u = Math.random(), v = Math.random();
-                    const theta = 2 * Math.PI * u;
-                    const phi = Math.acos(2 * v - 1);
-                    r = PARAMS.planetRadius * Math.pow(Math.random(), 0.7);
-                    x = r * Math.sin(phi) * Math.cos(theta);
-                    y = r * Math.sin(phi) * Math.sin(theta);
-                    z = r * Math.cos(phi);
-                    type = 0; // Sphere
-                } else { // RING (CINCN)
-                    angle = Math.random() * Math.PI * 2;
-                    r = PARAMS.ringInnerRadius + Math.pow(Math.random(), 0.6) * (PARAMS.ringOuterRadius - PARAMS.ringInnerRadius);
-                    if (r > 7.5 && r < 7.9) r += (Math.random()-0.5) * 1.5; // Celah Cassini
-
-                    x = Math.cos(angle) * r;
-                    y = (Math.random() - 0.5) * 0.1;
-                    z = Math.sin(angle) * r;
-                    type = 1; // Ring
-                }
-
-                data[i * 4] = x; data[i * 4 + 1] = y; data[i * 4 + 2] = z;
-                data[i * 4 + 3] = type; // Simpan tipe partikel di W (fase)
-            }
-        }
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
     </script>
 </body>
 </html>
