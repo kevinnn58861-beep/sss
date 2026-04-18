@@ -1,109 +1,213 @@
 <!DOCTYPE html>
-<html>
+<html lang="id">
 <head>
-    <title>Saturnus Pro: Hand-Gesture Experience</title>
+    <meta charset="UTF-8">
+    <title>Saturnus Ultimate v3.0: The Force Gesture</title>
     <style>
-        body { margin: 0; overflow: hidden; background: radial-gradient(circle, #000510 0%, #000 100%); color: #fff; font-family: 'Segoe UI', sans-serif; }
-        #ui-overlay { position: absolute; top: 20px; left: 20px; pointer-events: none; }
-        #video-container { position: absolute; bottom: 20px; right: 20px; width: 160px; height: 120px; transform: scaleX(-1); border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        h1 { margin: 0; font-weight: 200; letter-spacing: 5px; text-transform: uppercase; font-size: 18px; color: #ffd700; }
+        body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: 'Segoe UI', system-ui, sans-serif; }
+        #ui-overlay { position: absolute; top: 30px; left: 30px; pointer-events: none; z-index: 10; border-left: 2px solid #ffaa00; padding-left: 20px;}
+        h1 { margin: 0; font-weight: 200; letter-spacing: 6px; text-transform: uppercase; font-size: 20px; color: #ffaa00; text-shadow: 0 0 10px rgba(255,170,0,0.5); }
+        p#status { font-size: 14px; opacity: 0.8; margin: 8px 0 0; font-style: italic; color: #aaa; }
+        
+        #video-container { position: absolute; bottom: 30px; right: 30px; width: 220px; height: 165px; transform: scaleX(-1); border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+        #input_video { display: none; }
+        #output_canvas { width: 100%; height: 100%; object-fit: cover; }
     </style>
 </head>
 <body>
     <div id="ui-overlay">
-        <h1>Saturnus Particle System v2.0</h1>
-        <p style="font-size: 12px; opacity: 0.6;">Gunakan telunjuk untuk memutar & mendorong partikel</p>
+        <h1>SATURNUS ULTIMATE</h1>
+        <p style="font-size: 11px; color: #888;">GENERATIVE 3D ASTROPHYSICS v3.0</p>
+        <p id="status">Kamera sedang inisialisasi...</p>
     </div>
-    <video id="input_video" style="display:none;"></video>
-    <div id="video-container"><canvas id="output_canvas" style="width:100%"></canvas></div>
+    <video id="input_video"></video>
+    <div id="video-container"><canvas id="output_canvas"></canvas></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        // --- INISIALISASI SCENE ---
+        // --- CONFIG & PARAMETERS ---
+        const PARAMS = {
+            planetParticleCount: 25000,
+            ringParticleCount: 45000,
+            starParticleCount: 15000,
+            planetRadius: 4,
+            ringInnerRadius: 5.8,
+            ringOuterRadius: 11,
+            colorPlanetCore: 0xFFD700, // Gold
+            colorPlanetOuter: 0x4B0082, // Indigo Deep
+            colorRingInner: 0xFFC0CB, // Pink
+            colorRingOuter: 0x00FFFF, // Cyan
+            explosionForce: 0.1 // Kecepatan partikel saat meledak
+        };
+
+        // --- CORE THREE.JS SETUP ---
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        scene.fog = new THREE.FogExp2(0x000000, 0.005); // Kabut ruang angkasa
+
+        const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.set(0, 4, 25);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
 
-        const group = new THREE.Group();
-        scene.add(group);
+        const mainGroup = new THREE.Group(); // Wadah utama Saturnus
+        scene.add(mainGroup);
 
-        // --- BACKGROUND STARFIELD ---
-        const starGeo = new THREE.BufferGeometry();
-        const starCoords = [];
-        for(let i=0; i<10000; i++) {
-            starCoords.push((Math.random()-0.5)*1500, (Math.random()-0.5)*1500, (Math.random()-0.5)*1500);
+        // --- FUNCTION: MEMBUAT TEKSTUR PARTIKEL ROUND GLOW ---
+        function createCircleTexture(size = 64) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size; canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const center = size / 2;
+
+            // Membuat gradien lingkaran
+            const gradient = ctx.createRadialGradient(center, center, 0, center, center, center);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)'); // Putih padat di pusat
+            gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
+            gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.2)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)'); // Transparan di pinggir
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, size, size);
+
+            return new THREE.CanvasTexture(canvas);
         }
-        starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starCoords, 3));
-        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.7, transparent: true, opacity: 0.5 });
+        const particleTexture = createCircleTexture();
+
+        // --- ASTROPHYSICS OBJECTS SETUP ---
+
+        // 1. STARFIELD (LATAR BELAKANG)
+        const starGeo = new THREE.BufferGeometry();
+        const starPos = [];
+        for(let i=0; i<PARAMS.starParticleCount; i++) {
+            starPos.push((Math.random()-0.5)*1500, (Math.random()-0.5)*1000, (Math.random()-0.5)*1500);
+        }
+        starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+        const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8, map: particleTexture, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false });
         scene.add(new THREE.Points(starGeo, starMat));
 
-        // --- PARTIKEL SATURNUS (SHADERS-LIKE BEHAVIOR) ---
-        function createParticles(count, radius, colorInner, colorOuter, isRing = false) {
+        // 2. SATURNUS PARTIKEL DENGAN MEMORI POSISI (UNTUK MELEDAK)
+        function createDynamicParticles(count, params, isRing = false) {
             const geo = new THREE.BufferGeometry();
-            const pos = new Float32Array(count * 3);
+            
+            // Array untuk posisi saat ini, warna, dan posisi asli
+            const positions = new Float32Array(count * 3);
+            const originalPositions = new Float32Array(count * 3);
             const colors = new Float32Array(count * 3);
-            const sizes = new Float32Array(count);
+            const velocities = new Float32Array(count * 3); // Simpan arah ledakan
+
+            const colorInner = new THREE.Color(isRing ? params.colorRingInner : params.colorPlanetCore);
+            const colorOuter = new THREE.Color(isRing ? params.colorRingOuter : params.colorPlanetOuter);
 
             for (let i = 0; i < count; i++) {
-                let x, y, z, r;
-                if (!isRing) { // SPHERE
+                let x, y, z, r, angle;
+                if (!isRing) { // SPHERE (PLANET)
                     const u = Math.random(), v = Math.random();
-                    const theta = 2 * Math.PI * u, phi = Math.acos(2 * v - 1);
-                    r = radius * Math.pow(Math.random(), 0.5);
+                    const theta = 2 * Math.PI * u;
+                    const phi = Math.acos(2 * v - 1);
+                    r = params.planetRadius * Math.pow(Math.random(), 0.7);
                     x = r * Math.sin(phi) * Math.cos(theta);
                     y = r * Math.sin(phi) * Math.sin(theta);
                     z = r * Math.cos(phi);
-                } else { // RING
-                    const angle = Math.random() * Math.PI * 2;
-                    r = radius + (Math.random() * 4);
+                } else { // RING (CINCN)
+                    angle = Math.random() * Math.PI * 2;
+                    // Celah Cassini buatan
+                    r = params.ringInnerRadius + Math.pow(Math.random(), 0.6) * (params.ringOuterRadius - params.ringInnerRadius);
+                    if (r > 7.8 && r < 8.2) r += (Math.random()-0.5) * 2; // Buat celah kosong
+
                     x = Math.cos(angle) * r;
-                    y = (Math.random() - 0.5) * 0.1;
+                    y = (Math.random() - 0.5) * 0.15; // Ketebalan cincin
                     z = Math.sin(angle) * r;
                 }
 
-                pos[i*3] = x; pos[i*3+1] = y; pos[i*3+2] = z;
+                positions[i*3] = x; positions[i*3+1] = y; positions[i*3+2] = z;
                 
-                const mix = r / (radius + 4);
-                const c = new THREE.Color(colorInner).lerp(new THREE.Color(colorOuter), mix);
+                // Simpan posisi asli
+                originalPositions[i*3] = x; originalPositions[i*3+1] = y; originalPositions[i*3+2] = z;
+
+                // Tentukan warna berdasarkan radius
+                const mix = isRing ? (r - params.ringInnerRadius) / (params.ringOuterRadius - params.ringInnerRadius) : r / params.planetRadius;
+                const c = colorInner.clone().lerp(colorOuter, mix * 1.3); // Sedikit boost warna luar
                 colors[i*3] = c.r; colors[i*3+1] = c.g; colors[i*3+2] = c.b;
-                sizes[i] = Math.random();
+
+                // Set velocity acak awal (kecil)
+                velocities[i*3] = (Math.random()-0.5) * 0.01;
+                velocities[i*3+1] = (Math.random()-0.5) * 0.01;
+                velocities[i*3+2] = (Math.random()-0.5) * 0.01;
             }
-            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            // Atribut khusus kita (tidak standar Three.js, untuk akses manual)
+            geo.userData.originalPositions = originalPositions;
+            geo.userData.velocities = velocities;
             return geo;
         }
 
-        const planetGeo = createParticles(12000, 4, 0xffaa00, 0x664422);
-        const ringGeo = createParticles(25000, 5.5, 0xffdbac, 0x8b4513, true);
+        const planetGeo = createDynamicParticles(PARAMS.planetParticleCount, PARAMS);
+        const ringGeo = createDynamicParticles(PARAMS.ringParticleCount, PARAMS, true);
 
-        const mat = new THREE.PointsMaterial({
-            size: 0.05, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false
-        });
+        const planetMat = new THREE.PointsMaterial({ size: 0.1, vertexColors: true, map: particleTexture, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.9 });
+        const ringMat = new THREE.PointsMaterial({ size: 0.08, vertexColors: true, map: particleTexture, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.8 });
 
-        const planet = new THREE.Points(planetGeo, mat);
-        const ring = new THREE.Points(ringGeo, mat);
-        ring.rotation.x = Math.PI / 2.5;
-        group.add(planet, ring);
+        const planetPoints = new THREE.Points(planetGeo, planetMat);
+        const ringPoints = new THREE.Points(ringGeo, ringMat);
+        ringPoints.rotation.x = Math.PI / 2.5; // Kemiringan cincin ikonik
 
-        camera.position.z = 15;
+        mainGroup.add(planetPoints, ringPoints);
+
 
         // --- LOGIKA SENSOR TANGAN (MEDIAPIPE) ---
-        let mouseX = 0, mouseY = 0;
-        let targetX = 0, targetY = 0;
+        let handStatus = "Mencari Tangan...";
+        let handX = 0, handY = 0;
+        let isFist = false;
 
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1 });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.7 });
+
         hands.onResults(res => {
+            const statusEl = document.getElementById('status');
             if (res.multiHandLandmarks && res.multiHandLandmarks[0]) {
-                const p = res.multiHandLandmarks[0][8]; // Telunjuk
-                targetX = (p.x - 0.5) * 25;
-                targetY = -(p.y - 0.5) * 15;
+                const marks = res.multiHandLandmarks[0];
+                
+                // 1. Ambil Posisi Telapak Tangan (Landmark 0) untuk pergeseran kamera
+                handX = (marks[0].x - 0.5) * 2;
+                handY = -(marks[0].y - 0.5) * 2;
+
+                // 2. Logika Deteksi Mengepal (Fist)
+                // Hitung jarak rata-rata 4 ujung jari ke telapak tangan
+                const fingerTips = [8, 12, 16, 20];
+                let distSum = 0;
+                for(let tip of fingerTips) {
+                    const d = Math.sqrt(Math.pow(marks[tip].x - marks[0].x, 2) + Math.pow(marks[tip].y - marks[0].y, 2));
+                    distSum += d;
+                }
+                const avgDist = distSum / 4;
+
+                // Batas jarak untuk mendeteksi kepalan (eksperimental)
+                if (avgDist < 0.15) {
+                    if (!isFist) { // Pertama kali mengepal
+                        // Berikan "tendangan" velocity awal ledakan
+                        statusEl.innerText = "EXPLOSION DETECTED!";
+                        statusEl.style.color = "#ff4444";
+                        initExplosionVelocities(planetGeo);
+                        initExplosionVelocities(ringGeo);
+                    }
+                    isFist = true;
+                } else {
+                    isFist = false;
+                    statusEl.innerText = "Tangan Terbuka: Saturnus Rotasi Normal";
+                    statusEl.style.color = "#88ff88";
+                }
+            } else {
+                statusEl.innerText = "Tangan tidak terdeteksi";
+                statusEl.style.color = "#aaa";
+                isFist = false;
             }
         });
 
@@ -114,35 +218,93 @@
         });
         cameraDevice.start();
 
-        // --- ANIMASI ---
+
+        // --- LOGIKA ASTROFISIKA DINAMIS (PHYSICS & ANIMATION) ---
+
+        // Inisialisasi velocity acak saat ledakan dimulai
+        function initExplosionVelocities(geometry) {
+            const velocities = geometry.userData.velocities;
+            const count = geometry.attributes.position.count;
+            for (let i = 0; i < count; i++) {
+                velocities[i*3] = (Math.random() - 0.5) * PARAMS.explosionForce * 2;
+                velocities[i*3+1] = (Math.random() - 0.5) * PARAMS.explosionForce * 2;
+                velocities[i*3+2] = (Math.random() - 0.5) * PARAMS.explosionForce * 2;
+            }
+        }
+
+        // Update Posisi Partikel berdasarkan Status (Normal vs Meledak)
+        function updateParticles(geometry, deltaTime) {
+            const positions = geometry.attributes.position.array;
+            const originals = geometry.userData.originalPositions;
+            const velocities = geometry.userData.velocities;
+            const count = geometry.attributes.position.count;
+
+            for (let i = 0; i < count; i++) {
+                if (isFist) {
+                    // MODE MELEDAK: Partikel bergerak menjauh berdasarkan velocity
+                    positions[i*3] += velocities[i*3];
+                    positions[i*3+1] += velocities[i*3+1];
+                    positions[i*3+2] += velocities[i*3+2];
+
+                    // Sedikit drag (perlambatan) agar tidak terbang selamanya
+                    velocities[i*3] *= 0.98;
+                    velocities[i*3+1] *= 0.98;
+                    velocities[i*3+2] *= 0.98;
+
+                } else {
+                    // MODE NORMAL: Partikel secara perlahan ditarik kembali ke posisi asli (Gravity)
+                    // Linear Interpolation (lerp)
+                    const lerpFactor = 0.05; 
+                    positions[i*3] += (originals[i*3] - positions[i*3]) * lerpFactor;
+                    positions[i*3+1] += (originals[i*3+1] - positions[i*3+1]) * lerpFactor;
+                    positions[i*3+2] += (originals[i*3+2] - positions[i*3+2]) * lerpFactor;
+                }
+            }
+            // Penting: Beritahu Three.js bahwa posisi telah berubah
+            geometry.attributes.position.needsUpdate = true;
+        }
+
+        // --- MAIN RENDER LOOP ---
+        let currentHandX = 0, currentHandY = 0;
+        const clock = new THREE.Clock();
+
         function animate() {
             requestAnimationFrame(animate);
+            const deltaTime = clock.getDelta(); // Waktu antar frame
 
-            // Interpolasi Halus Gerakan Kamera berdasarkan Tangan
-            mouseX += (targetX - mouseX) * 0.05;
-            mouseY += (targetY - mouseY) * 0.05;
+            // 1. Update Fisika Partikel
+            updateParticles(planetGeo, deltaTime);
+            updateParticles(ringGeo, deltaTime);
 
-            group.rotation.y += 0.002;
-            group.position.x = mouseX * 0.2;
-            group.position.y = mouseY * 0.2;
-            
-            // Berikan sedikit kemiringan dinamis
-            group.rotation.z = mouseX * 0.05;
-            group.rotation.x = -mouseY * 0.05;
+            // 2. Update Pergerakan Kamera (Smooth Lerp)
+            currentHandX += (handX - currentHandX) * 0.05;
+            currentHandY += (handY - currentHandY) * 0.05;
+            camera.position.x = currentHandX * 8; // Sensitivitas
+            camera.position.y = currentHandY * 4 + 4; // Sedikit di atas
+            camera.lookAt(0, 0, 0); // Selalu fokus ke pusat Saturnus
 
-            // Efek Pulsing (Berdenyut)
+            // 3. Update Rotasi Saturnus (Normal)
+            if (!isFist) {
+                mainGroup.rotation.y += 0.0015;
+            }
+
+            // 4. Efek Glowing Pulsing (Berdenyut) pada Material
             const time = Date.now() * 0.001;
-            mat.size = 0.04 + Math.sin(time * 2) * 0.01;
+            planetMat.size = 0.1 + Math.sin(time * 3) * 0.015;
+            ringMat.size = 0.08 + Math.cos(time * 3) * 0.01;
 
             renderer.render(scene, camera);
         }
+
         animate();
 
+        // Menangani perubahan ukuran jendela
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
+
     </script>
 </body>
 </html>
