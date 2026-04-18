@@ -1,187 +1,200 @@
 <!DOCTYPE html>
-<html lang="id">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Hand Particles - Masterpiece</title>
+    <title>3D Hand Sensor: Saturnus Particle</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: sans-serif; }
-        #input_video { 
-            position: absolute; bottom: 10px; right: 10px; 
-            width: 200px; border: 2px solid #555; border-radius: 8px; 
-            transform: scaleX(-1); z-index: 10; 
-        }
-        #instructions {
-            position: absolute; top: 10px; left: 10px;
-            color: white; background: rgba(0,0,0,0.6);
-            padding: 15px; border-radius: 10px; pointer-events: none;
-            z-index: 10; line-height: 1.6;
-        }
-        .key { color: #00ffcc; font-weight: bold; }
+        body { margin: 0; overflow: hidden; background: #000; color: #fff; font-family: sans-serif; }
+        #video-container { position: absolute; bottom: 10px; right: 10px; width: 150px; transform: scaleX(-1); opacity: 0.5; border: 2px solid #555; }
+        #loading-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; }
     </style>
 </head>
 <body>
-
-    <div id="instructions">
-        <h3 style="margin-top:0">Kontrol Tangan:</h3>
-        <div><span class="key">Kepal:</span> Saturnus (Emas)</div>
-        <div><span class="key">1 Jari:</span> Menara Eiffel (Putih)</div>
-        <div><span class="key">2 Jari:</span> Planet Bumi (Realistis)</div>
-        <div><span class="key">3 Jari:</span> Pohon Natal (Hijau/Merah)</div>
-    </div>
-
-    <video id="input_video" autoplay playsinline></video>
+    <div id="loading-text">Menyiapkan Kamera...</div>
+    <video id="input_video" style="display:none;"></video>
+    <div id="video-container"><canvas id="output_canvas" style="width:100%"></canvas></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <script>
-        // --- 1. SETUP THREE.JS ---
-        const particleCount = 100000; 
+        // --- 1. SETTING UTAMA THREE.JS ---
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
         document.body.appendChild(renderer.domElement);
-        camera.position.z = 20;
 
-        // --- 2. DATA BUFFER ---
-        const geometry = new THREE.BufferGeometry();
-        const positions = new Float32Array(particleCount * 3);
-        const colors = new Float32Array(particleCount * 3);
+        camera.position.z = 12;
+        camera.position.y = 2; // Sedikit sudut pandang atas
 
-        const shapes = {
-            saturn: new Float32Array(particleCount * 3),
-            eiffel: new Float32Array(particleCount * 3),
-            earth: new Float32Array(particleCount * 3),
-            earthCol: new Float32Array(particleCount * 3),
-            xmas: new Float32Array(particleCount * 3),
-            xmasCol: new Float32Array(particleCount * 3)
-        };
+        // Wadah utama untuk seluruh model Saturnus agar bisa diputar bersama
+        const saturnSystem = new THREE.Group();
+        scene.add(saturnSystem);
 
-        // --- 3. GENERATE SHAPES ---
-        for (let i = 0; i < particleCount; i++) {
-            const idx = i * 3;
+        // --- 2. PARTIKEL PLANET (BOLA) ---
+        const planetParams = { count: 8000, radius: 3 };
+        const planetGeometry = new THREE.BufferGeometry();
+        const planetPositions = new Float32Array(planetParams.count * 3);
+        const planetColors = new Float32Array(planetParams.count * 3);
 
-            // SATURNUS
-            if (i < particleCount * 0.4) {
-                const phi = Math.acos(-1 + (2 * i) / (particleCount * 0.4));
-                const theta = Math.sqrt(particleCount * 0.4 * Math.PI) * phi;
-                shapes.saturn[idx] = 3 * Math.cos(theta) * Math.sin(phi);
-                shapes.saturn[idx+1] = 3 * Math.sin(theta) * Math.sin(phi);
-                shapes.saturn[idx+2] = 3 * Math.cos(phi);
-            } else {
-                const a = Math.random() * Math.PI * 2;
-                const r = 4.5 + Math.random() * 3.5;
-                shapes.saturn[idx] = Math.cos(a) * r;
-                shapes.saturn[idx+1] = (Math.random() - 0.5) * 0.3;
-                shapes.saturn[idx+2] = Math.sin(a) * r;
-            }
+        const coreColor = new THREE.Color(0xFFD700); // Gold
+        const outerColor = new THREE.Color(0xD2B48C); // Tan/Krem
 
-            // EIFFEL
-            const yE = (Math.random() * 18) - 8;
-            const normYE = (yE + 8) / 18;
-            const scaleE = 4 * Math.exp(-2.5 * normYE);
-            const pillar = Math.floor(Math.random() * 4);
-            shapes.eiffel[idx] = (pillar < 2 ? 1 : -1) * scaleE + (Math.random()-0.5)*0.2;
-            shapes.eiffel[idx+1] = yE;
-            shapes.eiffel[idx+2] = (pillar % 2 === 0 ? 1 : -1) * scaleE + (Math.random()-0.5)*0.2;
+        for (let i = 0; i < planetParams.count; i++) {
+            // Distribusi Spherical Uniform
+            const u = Math.random();
+            const v = Math.random();
+            const theta = 2 * Math.PI * u;
+            const phi = Math.acos(2 * v - 1);
+            
+            const r = planetParams.radius * Math.pow(Math.random(), 1/3); // Kepadatan di pusat
 
-            // EARTH
-            const phiB = Math.acos(-1 + (2 * i) / particleCount);
-            const thetaB = Math.sqrt(particleCount * Math.PI) * phiB;
-            const rB = 6;
-            const ex = rB * Math.cos(thetaB) * Math.sin(phiB);
-            const ey = rB * Math.sin(thetaB) * Math.sin(phiB);
-            const ez = rB * Math.cos(phiB);
-            shapes.earth[idx] = ex; shapes.earth[idx+1] = ey; shapes.earth[idx+2] = ez;
-            const land = Math.sin(ex * 0.5) * Math.cos(ey * 0.5) * Math.sin(ez * 0.5) + Math.sin(ex * 1.2) * Math.cos(ey * 1.2);
-            const cB = new THREE.Color();
-            if (Math.abs(ey) > 5.3) cB.setHex(0xffffff);
-            else if (land > 0.15) cB.setHex(0x2d5a27);
-            else cB.setHex(0x0a2a4a);
-            shapes.earthCol[idx] = cB.r; shapes.earthCol[idx+1] = cB.g; shapes.earthCol[idx+2] = cB.b;
+            planetPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+            planetPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+            planetPositions[i * 3 + 2] = r * Math.cos(phi);
 
-            // XMAS
-            const yX = (Math.random() * 12) - 6;
-            const normYX = (yX + 6) / 12;
-            let rX, cX = new THREE.Color();
-            if (normYX < 0.1) { rX = 0.6; cX.setHex(0x4b2d0b); }
-            else { rX = (1.1 - normYX) * 4.5; cX.setHex(Math.random() > 0.98 ? 0xff0000 : 0x006400); }
-            shapes.xmas[idx] = (Math.random()-0.5)*rX; shapes.xmas[idx+1] = yX; shapes.xmas[idx+2] = (Math.random()-0.5)*rX;
-            shapes.xmasCol[idx] = cX.r; shapes.xmasCol[idx+1] = cX.g; shapes.xmasCol[idx+2] = cX.b;
-
-            // INIT
-            positions[idx] = shapes.saturn[idx]; positions[idx+1] = shapes.saturn[idx+1]; positions[idx+2] = shapes.saturn[idx+2];
-            colors[idx] = 1; colors[idx+1] = 0.8; colors[idx+2] = 0.2;
+            // Gradasi warna berdasarkan radius (pusat lebih emas, luar lebih krem)
+            const ratio = r / planetParams.radius;
+            const finalColor = coreColor.clone().lerp(outerColor, ratio);
+            planetColors[i * 3] = finalColor.r;
+            planetColors[i * 3 + 1] = finalColor.g;
+            planetColors[i * 3 + 2] = finalColor.b;
         }
 
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        const material = new THREE.PointsMaterial({ size: 0.02, vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
-        const points = new THREE.Points(geometry, material);
-        scene.add(points);
+        planetGeometry.setAttribute('position', new THREE.BufferAttribute(planetPositions, 3));
+        planetGeometry.setAttribute('color', new THREE.BufferAttribute(planetColors, 3));
 
-        // --- 4. HAND TRACKING ---
-        let currentTarget = shapes.saturn;
-        let currentCol = null;
-        let baseCol = new THREE.Color(0xffd700);
+        const planetMaterial = new THREE.PointsMaterial({
+            size: 0.04,
+            vertexColors: true,
+            blending: THREE.AdditiveBlending, // Efek Glowing
+            transparent: true,
+            depthWrite: false
+        });
+        const planetPoints = new THREE.Points(planetGeometry, planetMaterial);
+        saturnSystem.add(planetPoints);
 
+        // --- 3. PARTIKEL CINCIN (PIRINGAN) ---
+        const ringParams = { count: 15000, innerRadius: 4, outerRadius: 8 };
+        const ringGeometry = new THREE.BufferGeometry();
+        const ringPositions = new Float32Array(ringParams.count * 3);
+        const ringColors = new Float32Array(ringParams.count * 3);
+
+        // Warna Cincin (Cokelat muda, emas pudar, krem)
+        const ringColor1 = new THREE.Color(0xCD853F); // Peru Brown
+        const ringColor2 = new THREE.Color(0xFFE4B5); // Moccasin Cream
+
+        for (let i = 0; i < ringParams.count; i++) {
+            // Distribusi Piringan Datar
+            const angle = Math.random() * Math.PI * 2;
+            // Membuat distribusi yang sedikit tidak merata (celah Cassini palsu)
+            let r = ringParams.innerRadius + Math.sqrt(Math.random()) * (ringParams.outerRadius - ringParams.innerRadius);
+            if (r > 5.8 && r < 6.2) r += (Math.random() - 0.5) * 1.5; // Celah buatan
+
+            ringPositions[i * 3] = Math.cos(angle) * r;
+            ringPositions[i * 3 + 1] = (Math.random() - 0.5) * 0.15; // Ketebalan cincin tipis
+            ringPositions[i * 3 + 2] = Math.sin(angle) * r;
+
+            // Gradasi warna cincin
+            const ratio = (r - ringParams.innerRadius) / (ringParams.outerRadius - ringParams.innerRadius);
+            const finalColor = ringColor1.clone().lerp(ringColor2, ratio);
+            ringColors[i * 3] = finalColor.r;
+            ringColors[i * 3 + 1] = finalColor.g;
+            ringColors[i * 3 + 2] = finalColor.b;
+        }
+
+        ringGeometry.setAttribute('position', new THREE.BufferAttribute(ringPositions, 3));
+        ringGeometry.setAttribute('color', new THREE.BufferAttribute(ringColors, 3));
+
+        const ringMaterial = new THREE.PointsMaterial({
+            size: 0.03,
+            vertexColors: true,
+            blending: THREE.AdditiveBlending,
+            transparent: true,
+            depthWrite: false,
+            opacity: 0.8
+        });
+        const ringPoints = new THREE.Points(ringGeometry, ringMaterial);
+        saturnSystem.add(ringPoints);
+
+        // Memiringkan cincin agar terlihat realistis
+        ringPoints.rotation.x = Math.PI * 0.15; 
+
+
+        // --- 4. SETTING SENSOR MEDIAPIPE ---
         const videoElement = document.getElementById('input_video');
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
-        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.6 });
+        
+        // Parameter Hands
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDistances: 0.5 });
 
-        hands.onResults((res) => {
-            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-                const pts = res.multiHandLandmarks[0];
-                points.position.x = THREE.MathUtils.lerp(points.position.x, (pts[9].x - 0.5) * -35, 0.1);
-                points.position.y = THREE.MathUtils.lerp(points.position.y, (pts[9].y - 0.5) * -25, 0.1);
+        // Fungsi yang dipanggil saat MediaPipe mendeteksi tangan
+        hands.onResults((results) => {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                // Sembunyikan teks loading saat kamera aktif
+                document.getElementById('loading-text').style.display = 'none';
 
-                const index = pts[8].y < pts[6].y - 0.05;
-                const middle = pts[12].y < pts[10].y - 0.05;
-                const ring = pts[16].y < pts[14].y - 0.05;
+                // Ambil koordinat ujung jari telunjuk (Landmark 8)
+                const indexFinger = results.multiHandLandmarks[0][8];
+                
+                // Konversi koordinat [0, 1] ke [-1, 1]
+                const handX = (indexFinger.x - 0.5) * 2;
+                const handY = -(indexFinger.y - 0.5) * 2;
 
-                if (index && middle && ring) { currentTarget = shapes.xmas; currentCol = shapes.xmasCol; }
-                else if (index && middle) { currentTarget = shapes.earth; currentCol = shapes.earthCol; }
-                else if (index) { currentTarget = shapes.eiffel; currentCol = null; baseCol.setHex(0xeeeeee); }
-                else { currentTarget = shapes.saturn; currentCol = null; baseCol.setHex(0xffd700); }
+                // Gunakan posisi tangan untuk ROTASI Saturnus
+                // handX mengontrol putaran horizontal (Y), handY mengontrol kemiringan (X)
+                // Smoothening dengan lerp sederhana di dalam animate()
+                targetRotationY = handX * Math.PI; // Full rotate
+                targetRotationX = handY * Math.PI * 0.5; // Half rotate
             }
         });
 
-        new Camera(videoElement, { onFrame: async () => { await hands.send({image: videoElement}); }, width: 640, height: 480 }).start();
+        // Menghubungkan kamera web
+        const cameraUtils = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 640, height: 480
+        });
+        cameraUtils.start();
 
-        // --- 5. ANIMATE ---
+
+        // --- 5. ANIMASI & RENDER LOOP ---
+        let currentRotationY = 0;
+        let currentRotationX = 0;
+        let targetRotationY = 0;
+        let targetRotationX = 0;
+        const lerpFactor = 0.05; // Mengontrol kelembutan gerakan (lebih kecil = lebih lambat/halus)
+
         function animate() {
             requestAnimationFrame(animate);
-            const pos = geometry.attributes.position;
-            const col = geometry.attributes.color;
-            for (let i = 0; i < particleCount; i++) {
-                const idx = i * 3;
-                pos.array[idx] += (currentTarget[idx] - pos.array[idx]) * 0.08;
-                pos.array[idx+1] += (currentTarget[idx+1] - pos.array[idx+1]) * 0.08;
-                pos.array[idx+2] += (currentTarget[idx+2] - pos.array[idx+2]) * 0.08;
-                if (currentCol) {
-                    col.array[idx] += (currentCol[idx] - col.array[idx]) * 0.1;
-                    col.array[idx+1] += (currentCol[idx+1] - col.array[idx+1]) * 0.1;
-                    col.array[idx+2] += (currentCol[idx+2] - col.array[idx+2]) * 0.1;
-                } else {
-                    col.array[idx] += (baseCol.r - col.array[idx]) * 0.1;
-                    col.array[idx+1] += (baseCol.g - col.array[idx+1]) * 0.1;
-                    col.array[idx+2] += (baseCol.b - col.array[idx+2]) * 0.1;
-                }
-            }
-            pos.needsUpdate = true; col.needsUpdate = true;
-            points.rotation.y += 0.003;
+
+            // Rotasi konstan otomatis lambat
+            saturnSystem.rotation.y += 0.001;
+
+            // Interpolasi halus gerakan tangan
+            currentRotationY += (targetRotationY - currentRotationY) * lerpFactor;
+            currentRotationX += (targetRotationX - currentRotationX) * lerpFactor;
+
+            // Terapkan rotasi tangan ke grup
+            saturnSystem.rotation.y = currentRotationY;
+            saturnSystem.rotation.x = currentRotationX;
+
+            // Sedikit variasi gerakan partikel untuk efek dinamis
+            planetPoints.rotation.z += 0.0005;
+
             renderer.render(scene, camera);
         }
+
         animate();
 
-        window.addEventListener('resize', () => {
+        // Menangani perubahan ukuran jendela browser
+        window.addEventListener('resize', onWindowResize, false);
+        function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        }
     </script>
 </body>
 </html>
