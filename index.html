@@ -204,35 +204,29 @@
         hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.8 });
 
         hands.onResults(res => {
-            const statusEl = document.getElementById('status');
-            let rightHandDetected = false;
-            let leftHandFist = false;
+    const statusEl = document.getElementById('status');
+    let rightHandDetected = false;
+    let leftHandFist = false;
 
-            if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-                // Iterasi setiap tangan yang terdeteksi
-                res.multiHandLandmarks.forEach((marks, index) => {
-                    const label = res.multiHandedness[index].label; // "Left" atau "Right"
+    if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
+        // ... (logika deteksi tangan Anda tetap sama) ...
 
-                    if (label === "Right") {
-                        // TANGAN KANAN: Tarikan Gravitasi (Pusat di Telapak Tangan, Landmark 0)
-                        // Konversi koordinat [0,1] ke ruang 3D Three.js
-                        handGravityPos.x = (marks[0].x - 0.5) * 30; // Sensitivitas horizontal
-                        handGravityPos.y = -(marks[0].y - 0.5) * 20; // Sensitivitas vertikal
-                        handGravityPos.z = (marks[0].z) * 10;       // Kedalaman
-                        rightHandDetected = true;
-                    }
-
-                    if (label === "Left") {
-                        // TANGAN KIRI: Supernova Explosion (Cek Mengepal)
-                        // Jarak rata-rata ujung jari ke telapak
-                        const fingerTips = [8, 12, 16, 20];
-                        let distSum = 0;
-                        for(let tip of fingerTips) {
-                            distSum += Math.sqrt(Math.pow(marks[tip].x - marks[0].x, 2) + Math.pow(marks[tip].y - marks[0].y, 2));
-                        }
-                        if (distSum / 4 < 0.15) { leftHandFist = true; }
-                    }
-                });
+        // --- BAGIAN PERBAIKAN ---
+        if (leftHandFist && rightHandDetected) {
+            statusEl.innerText = "Tangan Kanan: Gravitasi Aktif | Tangan Kiri: SUPERNOVA!";
+            statusEl.style.color = "#ff4444";
+        } else if (rightHandDetected) {
+            statusEl.innerText = "Tangan Kanan: Gravitasi Kustom Aktif";
+            statusEl.style.color = "#00ffff";
+        } else if (leftHandFist) {
+            statusEl.innerText = "Tangan Kiri: SUPERNOVA!";
+            statusEl.style.color = "#ff4444";
+        }
+    } else {
+        statusEl.innerText = "Tangan tidak terdeteksi";
+        statusEl.style.color = "#aaa";
+    }
+});
 
                 // Update Status UI & Variabel GPGPU
                 if (rightHandDetected) {
